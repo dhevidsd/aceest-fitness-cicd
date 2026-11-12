@@ -1,0 +1,127 @@
+# A/B Testing: users are routed by header 'X-User-Group: B' or cookie 'ab_group=always'
+# to variant B; everyone else gets variant A.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-ab-a
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: abtest, track: variant-a}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels: {app: aceest-fitness, strategy: abtest, track: variant-a}
+  template:
+    metadata:
+      labels: {app: aceest-fitness, strategy: abtest, track: variant-a}
+    spec:
+      containers:
+        - name: aceest-fitness
+          image: dhevishreeds/aceest-fitness:1.1.0
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 5000, name: http}]
+          env:
+            - {name: DEPLOYMENT_TRACK, value: "variant-a"}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-ab-a
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: abtest, track: variant-a}
+spec:
+  selector: {app: aceest-fitness, strategy: abtest, track: variant-a}
+  ports: [{port: 80, targetPort: http, name: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-ab-b
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: abtest, track: variant-b}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels: {app: aceest-fitness, strategy: abtest, track: variant-b}
+  template:
+    metadata:
+      labels: {app: aceest-fitness, strategy: abtest, track: variant-b}
+    spec:
+      containers:
+        - name: aceest-fitness
+          image: dhevishreeds/aceest-fitness:2.0.0
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 5000, name: http}]
+          env:
+            - {name: DEPLOYMENT_TRACK, value: "variant-b"}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-ab-b
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: abtest, track: variant-b}
+spec:
+  selector: {app: aceest-fitness, strategy: abtest, track: variant-b}
+  ports: [{port: 80, targetPort: http, name: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aceest-ab-a
+  namespace: aceest
+
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ab.aceest.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: aceest-ab-a, port: {number: 80}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aceest-ab-b
+  namespace: aceest
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-by-header: "X-User-Group"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "B"
+    nginx.ingress.kubernetes.io/canary-by-cookie: "ab_group"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ab.aceest.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: aceest-ab-b, port: {number: 80}}

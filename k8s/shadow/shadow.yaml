@@ -1,0 +1,108 @@
+# Shadow Deployment: live traffic is served by 'primary' and mirrored to 'shadow'.
+# Shadow responses are discarded, so users are never affected by the new version.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-shadow-primary
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: shadow, track: primary}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels: {app: aceest-fitness, strategy: shadow, track: primary}
+  template:
+    metadata:
+      labels: {app: aceest-fitness, strategy: shadow, track: primary}
+    spec:
+      containers:
+        - name: aceest-fitness
+          image: dhevishreeds/aceest-fitness:1.1.0
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 5000, name: http}]
+          env:
+            - {name: DEPLOYMENT_TRACK, value: "primary"}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-shadow-primary
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: shadow, track: primary}
+spec:
+  selector: {app: aceest-fitness, strategy: shadow, track: primary}
+  ports: [{port: 80, targetPort: http, name: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-shadow
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: shadow, track: shadow}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels: {app: aceest-fitness, strategy: shadow, track: shadow}
+  template:
+    metadata:
+      labels: {app: aceest-fitness, strategy: shadow, track: shadow}
+    spec:
+      containers:
+        - name: aceest-fitness
+          image: dhevishreeds/aceest-fitness:2.0.0
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 5000, name: http}]
+          env:
+            - {name: DEPLOYMENT_TRACK, value: "shadow"}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-shadow
+  namespace: aceest
+  labels: {app: aceest-fitness, strategy: shadow, track: shadow}
+spec:
+  selector: {app: aceest-fitness, strategy: shadow, track: shadow}
+  ports: [{port: 80, targetPort: http, name: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aceest-shadow-primary
+  namespace: aceest
+  annotations:
+    nginx.ingress.kubernetes.io/mirror-target: "http://aceest-shadow.aceest.svc.cluster.local$request_uri"
+    nginx.ingress.kubernetes.io/mirror-request-body: "on"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: shadow.aceest.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: aceest-shadow-primary, port: {number: 80}}
