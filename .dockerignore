@@ -10,3 +10,10 @@ venv/
 *.db
 reference/
 Jenkinsfile
+reports/
+.scannerwork/
+k8s/
+docs/
+screenshots_and_videos/
+*.docx
+*.docx:*

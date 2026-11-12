@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CI artefacts
+reports/
+.scannerwork/
+
+# Assignment briefs / Windows metadata (not part of the project)
+Introduction to DevOps*
+DevOps Assignment 1*.pdf
+*:Zone.Identifier
+*:sec.endpointdlp
